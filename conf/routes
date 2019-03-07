@@ -1,0 +1,9 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+GET /bias-correct/v1/slack/signin org.catalyst.biascorrect.controllers.v1.SlackAuthController.signin()
+GET /bias-correct/v1/slack/auth/redirect  org.catalyst.biascorrect.controllers.v1.SlackAuthController.handle()
+POST /bias-correct/v1/slack/events  org.catalyst.biascorrect.controllers.v1.SlackEventController.handle()
+POST /bias-correct/v1/slack/user_action  org.catalyst.biascorrect.controllers.v1.SlackUserActionController.handle()
+POST /bias-correct/v1/slack/help org.catalyst.biascorrect.controllers.v1.SlackHelpController.handle()
