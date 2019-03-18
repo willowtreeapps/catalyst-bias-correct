@@ -66,7 +66,10 @@ public class TriggerWordBiasDetector {
         for (Map.Entry<String, String> entry : _triggerWordMap.entrySet()) {
             String word = entry.getKey();
             String correctedWord = entry.getValue();
-            if (correctedMessage.contains(word)) {
+            
+            Pattern p = Pattern.compile("\\b" + word + "\\b");
+            Matcher m = p.matcher(correctedMessage);
+            if (m.find()) {
                 correctedMessage = correctedMessage.replace(word, String.format("*%s*", correctedWord));
             }
         }
