@@ -36,7 +36,9 @@ public class TriggerWordBiasDetector {
     private boolean hasFemalePronoun(String originalMessage) {
         boolean result = false;
         for (String word : FEMALE_PRONOUNS) {
-            if (originalMessage.contains(word)) {
+            Pattern p = Pattern.compile("\\b" + word + "\\b");
+            Matcher m = p.matcher(originalMessage);
+            if (m.find()) {
                 result = true;
                 break;
             }
