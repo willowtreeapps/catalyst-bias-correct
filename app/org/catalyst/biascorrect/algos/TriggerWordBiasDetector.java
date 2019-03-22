@@ -10,6 +10,8 @@ import org.catalyst.biascorrect.PlatformConstants;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -36,7 +38,9 @@ public class TriggerWordBiasDetector {
     private boolean hasFemalePronoun(String originalMessage) {
         boolean result = false;
         for (String word : FEMALE_PRONOUNS) {
-            if (originalMessage.contains(word)) {
+            Pattern p = Pattern.compile("\\b" + word + "\\b");
+            Matcher m = p.matcher(originalMessage);
+            if (m.find()) {
                 result = true;
                 break;
             }
@@ -62,7 +66,10 @@ public class TriggerWordBiasDetector {
         for (Map.Entry<String, String> entry : _triggerWordMap.entrySet()) {
             String word = entry.getKey();
             String correctedWord = entry.getValue();
-            if (correctedMessage.contains(word)) {
+            
+            Pattern p = Pattern.compile("\\b" + word + "\\b");
+            Matcher m = p.matcher(correctedMessage);
+            if (m.find()) {
                 correctedMessage = correctedMessage.replace(word, String.format("*%s*", correctedWord));
             }
         }
