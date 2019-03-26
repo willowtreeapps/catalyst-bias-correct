@@ -21,6 +21,14 @@ import java.util.concurrent.CompletionStage;
 
 public class SlackEventController extends BaseController implements WSBodyReadables, WSBodyWritables {
 
+    private static final String SLACK_APP_BOT_USER = System.getenv("APP_SLACK_BOT_USER");
+
+    private static final String SLACK_APP_BOT_AUTH_USER = System.getenv("APP_SLACK_BOT_AUTH_USER");
+
+    private static final String AT_SLACK_APP_BOT_USER = String.format("@%s", SLACK_APP_BOT_USER);
+
+    private static final String AT_SLACK_APP_BOT_AUTH_USER = String.format("@%s", SLACK_APP_BOT_AUTH_USER);
+
     @Inject
     public SlackEventController(WSClient wsClient) {
         super(wsClient);
@@ -55,12 +63,13 @@ public class SlackEventController extends BaseController implements WSBodyReadab
                                     String user = getValueFromJson(eventNode, "user");
                                     String team = getValueFromJson(node, "team_id");
                                     String eventSubType = getValueFromJson(eventNode, "subtype");
+                                    String messageText = getValueFromJson(eventNode, "text");
                                     if (eventSubType == null) {
                                         String channelType = getValueFromJson(eventNode, "channel_type");
-                                        String messageText = getValueFromJson(eventNode, "text");
                                         if ((channelType != null && channelType.equals("im")) ||
-                                                (messageText.contains("@UF5E8PGAD") || messageText.contains("@UFYJYAUSD"))
-                                                && messageText.toLowerCase().contains("help")) {
+                                                (messageText.contains(AT_SLACK_APP_BOT_USER) ||
+                                                        messageText.contains(AT_SLACK_APP_BOT_AUTH_USER))
+                                                        && messageText.toLowerCase().contains("help")) {
                                             handleHelpRequest(team, user, eventNode);
                                         } else {
                                             handleUserMessage(
@@ -69,9 +78,15 @@ public class SlackEventController extends BaseController implements WSBodyReadab
                                                     user
                                             );
                                         }
-                                    } else if (eventSubType.equals("channel_join") ||
-                                            (eventSubType.equals("group_join") && user.equals("UF5E8PGAD"))) {
-                                        handleChannelJoin(team, eventNode);
+                                    } else if (eventSubType.equals("channel_join")) {
+                                        if (user != null && messageText != null &&
+                                                messageText.equals(String.format("<@%s> has joined the channel", user))) {
+                                            handleChannelJoin(team, eventNode, user);
+                                        } else {
+                                            handleChannelJoin(team, eventNode, null);
+                                        }
+                                    } else if (eventSubType.equals("group_join") && user.equals(SLACK_APP_BOT_USER)) {
+                                        handleChannelJoin(team, eventNode, null);
                                     }
                                 }
                             }
@@ -133,11 +148,12 @@ public class SlackEventController extends BaseController implements WSBodyReadab
                         addHeader("Authorization", String.format("Bearer %s", authToken));
                 CompletionStage<JsonNode> jsonPromise = request.post(toJson(responseData)).thenApply(r -> r.getBody(json()));
                 JsonNode responseNode = extractResponseJson(jsonPromise);
+                Logger.of("play").info(responseNode.toString());
             }
         }
     }
 
-    private void handleChannelJoin(String team, JsonNode eventNode) {
+    private void handleChannelJoin(String team, JsonNode eventNode, String user) {
         String authToken = DbManager.getInstance().getTeamToken(team);
         if (authToken == null) {
             authToken = SlackSecrets.getInstance().getSlackAppOauthToken();
@@ -148,15 +164,28 @@ public class SlackEventController extends BaseController implements WSBodyReadab
         responseData.put("channel", channel);
         responseData.put("token", authToken);
         responseData.put("as_user", "false");
+        String apiCall = null;
+        String leadMessage = null;
+        if (user == null || user.equals(SLACK_APP_BOT_USER)) {
+            apiCall = "postMessage";
+            leadMessage = "The Catalyst *#BiasCorrect Plug-In* has been added to your channel";
+        } else {
+            responseData.put("user", user);
+            apiCall = "postEphemeral";
+            leadMessage = "You have been added to a channel which uses the Catalyst *#BiasCorrect Plug-In*";
+        }
         responseData.put(
                 "text",
-                "The Catalyst *#BiasCorrect Plug-In* has been added to your channel.\n" +
-                        "Studies show that unconscious gender bias fuels the gender gap. " +
-                        "This plug-in is designed to help empower its users to become a catalyst for change, " +
-                        "by flagging unconscious gender bias in real-time conversations and offering up alternative " +
-                        "bias-free words or phrases for users to consider instead. " +
-                        "Hit *Authorize* now to help #BiasCorrect the workplace, once and for all. " +
-                        "Use the *bias-correct* command for usage information"
+                String.format(
+                        "%s.\n" +
+                                "Studies show that unconscious gender bias fuels the gender gap. " +
+                                "This plug-in is designed to help empower its users to become a catalyst for change, " +
+                                "by flagging unconscious gender bias in real-time conversations and offering up alternative " +
+                                "bias-free words or phrases for users to consider instead. " +
+                                "Hit *Authorize* now to help #BiasCorrect the workplace, once and for all. " +
+                                "Use the *bias-correct* command for usage information",
+                        leadMessage
+                )
         );
         Map<String, Object> attachment = new HashMap<String, Object>();
         attachment.put("fallback", "Darn!  I wish this worked!");
@@ -165,12 +194,12 @@ public class SlackEventController extends BaseController implements WSBodyReadab
         attachments.add(attachment);
         responseData.put("attachments", attachments);
 
-        WSRequest request = _wsClient.url("https://slack.com/api/chat.postMessage").
+        WSRequest request = _wsClient.url(
+                String.format("https://slack.com/api/chat.%s", apiCall)).
                 setContentType("application/json").
                 addHeader("Authorization", String.format("Bearer %s", authToken));
         CompletionStage<JsonNode> jsonPromise = request.post(toJson(responseData)).thenApply(r -> r.getBody(json()));
-        JsonNode responseNode = extractResponseJson(jsonPromise);
-        Logger.of("play").info(responseNode.toString());
+        extractResponseJson(jsonPromise);
     }
 
     private void handleHelpRequest(String team, String user, JsonNode eventNode) {
