@@ -4,28 +4,30 @@ import com.opencsv.CSVParser;
 import com.opencsv.CSVParserBuilder;
 import com.opencsv.CSVReader;
 import com.opencsv.CSVReaderBuilder;
+import opennlp.tools.tokenize.DetokenizationDictionary;
+import opennlp.tools.tokenize.Detokenizer;
+import opennlp.tools.tokenize.DictionaryDetokenizer;
+import opennlp.tools.tokenize.SimpleTokenizer;
 import org.apache.commons.lang3.tuple.Pair;
-import org.catalyst.biascorrect.PlatformConstants;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
-import java.util.regex.Pattern;
-import java.util.regex.Matcher;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
+
+import static org.catalyst.biascorrect.PlatformConstants.ENV_RUN_MODE;
+import static org.catalyst.biascorrect.PlatformConstants.ENV_VALUE_PROD;
 
 public class TriggerWordBiasDetector {
 
-    private String[] FEMALE_PRONOUNS = {
-            "she",
-            "her",
-            "she's",
-            "she'd",
-            "she'll",
-            "her's",
-            "hers",
-    };
+    private SimpleTokenizer TOKENIZER = SimpleTokenizer.INSTANCE;
+
+    private Detokenizer _detokenizer = null;
+
+    private Set<String> _femalePronouns = new HashSet<String>();
 
     private Map<String, String> _triggerWordMap = new HashMap<String, String>();
 
@@ -35,12 +37,10 @@ public class TriggerWordBiasDetector {
         return INSTANCE;
     }
 
-    private boolean hasFemalePronoun(String originalMessage) {
+    private boolean hasFemalePronoun(String[] messageTokens) {
         boolean result = false;
-        for (String word : FEMALE_PRONOUNS) {
-            Pattern p = Pattern.compile("\\b" + word + "\\b");
-            Matcher m = p.matcher(originalMessage);
-            if (m.find()) {
+        for (String token : messageTokens) {
+            if (_femalePronouns.contains(token.toLowerCase())) {
                 result = true;
                 break;
             }
@@ -49,11 +49,11 @@ public class TriggerWordBiasDetector {
     }
 
     public Pair<Boolean, String> getCorrectedMessage(String originalMessage) {
-        String lowerOriginalMessage = originalMessage.toLowerCase();
-        if (hasFemalePronoun(lowerOriginalMessage)) {
+        String[] messageTokens = TOKENIZER.tokenize(originalMessage);
+        if (hasFemalePronoun(messageTokens)) {
             boolean corrected = false;
-            String correctedMessage = correctMessage(lowerOriginalMessage);
-            if (!correctedMessage.equals(lowerOriginalMessage)) {
+            String correctedMessage = correctMessage(messageTokens);
+            if (!correctedMessage.equalsIgnoreCase(originalMessage)) {
                 corrected = true;
             }
             return Pair.of(corrected, correctedMessage);
@@ -62,18 +62,27 @@ public class TriggerWordBiasDetector {
     }
 
     public String correctMessage(String originalMessage) {
-        String correctedMessage = originalMessage.toLowerCase();
-        for (Map.Entry<String, String> entry : _triggerWordMap.entrySet()) {
-            String word = entry.getKey();
-            String correctedWord = entry.getValue();
-            
-            Pattern p = Pattern.compile("\\b" + word + "\\b");
-            Matcher m = p.matcher(correctedMessage);
-            if (m.find()) {
-                correctedMessage = correctedMessage.replace(word, String.format("*%s*", correctedWord));
+        String[] messageTokens = TOKENIZER.tokenize(originalMessage);
+        return correctMessage(messageTokens);
+    }
+
+    private String correctMessage(String[] messageTokens) {
+        String[] correctedMessageTokens = new String[messageTokens.length];
+        for (int i = 0; i < messageTokens.length; ++i) {
+            String replacement = _triggerWordMap.get(messageTokens[i].toLowerCase());
+            if (replacement != null) {
+                if (messageTokens[i].charAt(0) == Character.toUpperCase(messageTokens[i].charAt(0))) {
+                    char[] replacementChars = replacement.toCharArray();
+                    replacementChars[0] = Character.toUpperCase(replacementChars[0]);
+                    correctedMessageTokens[i] = String.format("*%s*", new String(replacementChars));
+                } else {
+                    correctedMessageTokens[i] = String.format("*%s*", replacement);
+                }
+            } else {
+                correctedMessageTokens[i] = messageTokens[i];
             }
         }
-        return correctedMessage;
+        return _detokenizer.detokenize(correctedMessageTokens, null);
     }
 
     public static void init() {
@@ -84,10 +93,35 @@ public class TriggerWordBiasDetector {
     }
 
     private void initTriggerWords() {
+
+        _femalePronouns.add("she");
+        _femalePronouns.add("her");
+        _femalePronouns.add("she's");
+        _femalePronouns.add("she'll");
+        _femalePronouns.add("her's");
+        _femalePronouns.add("hers");
+
+        String[] tokens = new String[]{".", "!", "(", ")", "\"", "-", "?", "'"};
+
+        DetokenizationDictionary.Operation[] operations = new DetokenizationDictionary.Operation[]{
+                DetokenizationDictionary.Operation.MOVE_LEFT,
+                DetokenizationDictionary.Operation.MOVE_LEFT,
+                DetokenizationDictionary.Operation.MOVE_RIGHT,
+                DetokenizationDictionary.Operation.MOVE_LEFT,
+                DetokenizationDictionary.Operation.RIGHT_LEFT_MATCHING,
+                DetokenizationDictionary.Operation.MOVE_BOTH,
+                DetokenizationDictionary.Operation.MOVE_LEFT,
+                DetokenizationDictionary.Operation.MOVE_BOTH
+        };
+
+        DetokenizationDictionary dict = new DetokenizationDictionary(tokens, operations);
+
+        _detokenizer = new DictionaryDetokenizer(dict);
+
         String confDirLocation = null;
-        String runMode = System.getenv(PlatformConstants.ENV_RUN_MODE);
-        if (runMode == null || runMode.equals(PlatformConstants.ENV_VALUE_PROD)) {
-            confDirLocation = "/usr/local/eskalera/eskalera-bias-correction-java-latest/conf";
+        String runMode = System.getenv(ENV_RUN_MODE);
+        if (runMode == null || runMode.equals(ENV_VALUE_PROD)) {
+            confDirLocation = "/usr/local/catalyst/catalyst-bias-correct-latest/conf";
         } else {
             confDirLocation = "./conf";
         }

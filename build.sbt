@@ -33,8 +33,11 @@ libraryDependencies += "com.opencsv" % "opencsv" % "4.4"
 // https://mvnrepository.com/artifact/commons-codec/commons-codec
 libraryDependencies += "commons-codec" % "commons-codec" % "1.12"
 
+// https://mvnrepository.com/artifact/org.apache.opennlp/opennlp-tools
+libraryDependencies += "org.apache.opennlp" % "opennlp-tools" % "1.9.1"
+
 // Location of test files to run with sbt test
-javaSource in Test := baseDirectory.value / "test" / "java"
+javaSource in Test := baseDirectory.value / "test"
 
 // Make verbose tests
 testOptions in Test := Seq(Tests.Argument(TestFrameworks.JUnit, "-a", "-v"))
