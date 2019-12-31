@@ -23,6 +23,11 @@ jobs:
 
     steps:
       - checkout
+      - run:
+          name: setup build
+          command: |
+            echo 'export TAG=1.0.${CIRCLE_BUILD_NUM}' >> $BASH_ENV
+            echo 'export IMAGE=catalyst-bias-correct' >> $BASH_ENV
 
       # Download and cache dependencies
       - restore_cache:
@@ -40,3 +45,14 @@ jobs:
 
       # run tests!
       - run: cat /dev/null | sbt test:test
+      - setup_remote_docker:
+          docker_layer_caching: true
+      - deploy:
+          name: Push application Docker image
+          command: |
+            if [ "${CIRCLE_BRANCH}" == "master" ]; then
+              sbt docker:publishLocal
+              docker tag $IMAGE:1.0 $DOCKER_USER/$IMAGE:$TAG
+              docker login -u $DOCKER_USER -p $DOCKER_PASS
+              docker push $DOCKER_USER/$IMAGE:$TAG
+            fi

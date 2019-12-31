@@ -6,6 +6,15 @@ lazy val root = (project in file(".")).enablePlugins(PlayJava)
 
 scalaVersion := "2.12.4"
 
+dockerBaseImage := "openjdk:8-jre-alpine"
+import com.typesafe.sbt.packager.docker._
+dockerBuildOptions := Seq("--force-rm", "-t", s"${name.value}:${version.value}", "--network", "host")
+dockerCommands ++= Seq(
+  Cmd("USER", "root"),
+  ExecCmd("RUN", "echo", "-e", "http://nl.alpinelinux.org/alpine/v3.8/main\\nhttp://nl.alpinelinux.org/alpine/v3.8/community", ">", "/etc/apk/repositories"),
+  ExecCmd("RUN", "apk", "add", "--no-cache", "bash")
+)
+
 crossScalaVersions := Seq("2.11.12", "2.12.4")
 
 libraryDependencies += guice
